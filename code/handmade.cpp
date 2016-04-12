@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <stdint.h>
 #include <math.h>
+#include <xinput.h>
 
 #define internal static
 #define local_persist static 
@@ -11,6 +12,11 @@ typedef uint8_t uint8;
 typedef uint16_t uint16;
 typedef uint32_t uint32;
 typedef uint64_t uint64;
+
+typedef int8_t int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
 
 global_variable bool running;
 
@@ -205,6 +211,67 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 					TranslateMessage(&message);
 					DispatchMessage(&message);
 				}
+
+				// should we poll this more frequently?
+				for ( DWORD controllerIdx = 0; controllerIdx < XUSER_MAX_COUNT; ++controllerIdx ) {
+					XINPUT_STATE controllerState;
+					
+					// this controller is plugged in
+					if ( XInputGetState(controllerIdx, &controllerState) == ERROR_SUCCESS ) {
+
+						/*
+						_XINPUT_GAMEPAD {
+						  WORD  wButtons;
+						  BYTE  bLeftTrigger;
+						  BYTE  bRightTrigger;
+						  SHORT sThumbLX;
+						  SHORT sThumbLY;
+						  SHORT sThumbRX;
+						  SHORT sThumbRY;
+						} XINPUT_GAMEPAD, *PXINPUT_GAMEPAD;
+
+						XINPUT_GAMEPAD_DPAD_UP	0x0001
+						XINPUT_GAMEPAD_DPAD_DOWN	0x0002
+						XINPUT_GAMEPAD_DPAD_LEFT	0x0004
+						XINPUT_GAMEPAD_DPAD_RIGHT	0x0008
+						XINPUT_GAMEPAD_START	0x0010
+						XINPUT_GAMEPAD_BACK	0x0020
+						XINPUT_GAMEPAD_LEFT_THUMB	0x0040
+						XINPUT_GAMEPAD_RIGHT_THUMB	0x0080
+						XINPUT_GAMEPAD_LEFT_SHOULDER	0x0100
+						XINPUT_GAMEPAD_RIGHT_SHOULDER	0x0200
+						XINPUT_GAMEPAD_A	0x1000
+						XINPUT_GAMEPAD_B	0x2000
+						XINPUT_GAMEPAD_X	0x4000
+						XINPUT_GAMEPAD_Y	0x8000*/
+
+						//  see if controllerstate.dwPacketNumber increments too quickly
+						XINPUT_GAMEPAD *pad = &controllerState.Gamepad;
+						bool up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+						bool down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+						bool left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+						bool right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+						bool start = (pad->wButtons & XINPUT_GAMEPAD_START);
+						bool back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+						bool leftThumb = (pad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB);
+						bool rightThumb = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB);
+						bool leftShoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+						bool rightShoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+						bool aButton = (pad->wButtons & XINPUT_GAMEPAD_A);
+						bool bButton = (pad->wButtons & XINPUT_GAMEPAD_B);
+						bool xButton = (pad->wButtons & XINPUT_GAMEPAD_X);
+						bool yButton = (pad->wButtons & XINPUT_GAMEPAD_Y);
+
+						int16 stickX = pad->sThumbLX;
+						int16 stickY = pad->sThumbLY;
+
+					// controller not available
+					} else {
+
+					}
+
+				}
+
 				renderWeirdGradient(globalBackBuffer, xOffset, yOffset);
 
 				HDC deviceContext = GetDC(windowHandle);
