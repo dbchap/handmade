@@ -37,6 +37,36 @@ struct win32_window_dimensions {
 
 global_variable win32_offscreen_buffer globalBackBuffer;
 
+// XInputGetState wrapper to prevent null pointer
+#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE* pState)
+typedef X_INPUT_GET_STATE(x_input_get_state);
+X_INPUT_GET_STATE(XInputGetStateStub) {
+	return(0);
+}
+global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub;
+
+// XInputSetState wrapper to prevent null pointer
+#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
+typedef X_INPUT_SET_STATE(x_input_set_state);
+X_INPUT_SET_STATE(XInputSetStateStub) {
+	return(0);
+}
+global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
+
+typedef DWORD WINAPI x_input_get_state(DWORD dwUserIndex, XINPUT_STATE* pState);
+typedef DWORD WINAPI x_input_set_state(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration);
+
+#define XInputGetState XInputGetState_
+#define XInputSetState XInputSetState_
+
+
+internal void loadXInput(void) {
+	HMODULE XInputLibrary = LoadLibrary("xinput1_3.dll");
+	if ( XInputLibrary ) {
+		XInputGetState = (x_input_get_state*)GetProcAddress(XInputLibrary, "XInputGetState");
+		XInputSetState = (x_input_set_state*)GetProcAddress(XInputLibrary, "XInputSetState");
+	}
+}
 
 win32_window_dimensions getWindowDimensions(HWND window) {
 
@@ -167,6 +197,8 @@ MainWindowProc( HWND window, UINT message, WPARAM wParam, LPARAM lParam ) {
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
 	LPSTR lpCmdLine, int nCmdShow){
 
+	loadXInput();
+
 	WNDCLASS windowClass = {};
 
 	resizeDIBSection(&globalBackBuffer, 1280, 720);
@@ -265,6 +297,19 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 						int16 stickX = pad->sThumbLX;
 						int16 stickY = pad->sThumbLY;
 
+
+						if ( up ) {
+							yOffset += 4;
+						}
+						if ( down ) {
+							yOffset -= 4;
+						}
+						if ( left ) {
+							xOffset += 8;
+						}
+						if ( right ) {
+							xOffset -= 8;
+						}
 					// controller not available
 					} else {
 
@@ -280,7 +325,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 				displayBufferInWindow(&globalBackBuffer, deviceContext, windowDimensions.width, windowDimensions.height);
 				ReleaseDC(windowHandle, deviceContext);
 				++xOffset;
-				yOffset += 4;
 			}
 		}
 	} else {
