@@ -1,4 +1,4 @@
-// day 006 - Gamepad and Keyboard Input
+// day 007 - direct sound
 #include <windows.h>
 #include <stdint.h>
 #include <math.h>
@@ -61,7 +61,7 @@ typedef DWORD WINAPI x_input_set_state(DWORD dwUserIndex, XINPUT_VIBRATION* pVib
 
 
 internal void loadXInput(void) {
-	HMODULE XInputLibrary = LoadLibrary("xinput1_3.dll");
+	HMODULE XInputLibrary = LoadLibraryA("xinput1_3.dll");
 	if ( XInputLibrary ) {
 		XInputGetState = (x_input_get_state*)GetProcAddress(XInputLibrary, "XInputGetState");
 		XInputSetState = (x_input_set_state*)GetProcAddress(XInputLibrary, "XInputSetState");
@@ -79,12 +79,12 @@ win32_window_dimensions getWindowDimensions(HWND window) {
 
 }
 
-internal void renderWeirdGradient(win32_offscreen_buffer buffer, int xOffset, int  yOffset)  {
+internal void renderWeirdGradient(win32_offscreen_buffer *buffer, int xOffset, int  yOffset)  {
 
-	uint8 *row = (uint8*)buffer.memory;
-	for ( int y = 0; y < buffer.height; ++y ) {
+	uint8 *row = (uint8*)buffer->memory;
+	for ( int y = 0; y < buffer->height; ++y ) {
 		uint32 *pixel = (uint32*)row;
-		for ( int x = 0; x < buffer.width; ++x ) {
+		for ( int x = 0; x < buffer->width; ++x ) {
 			/*
 
 			Pixel in memory: BB GG RR xx
@@ -103,7 +103,7 @@ internal void renderWeirdGradient(win32_offscreen_buffer buffer, int xOffset, in
 			*/
 
 		}
-		row += buffer.pitch;
+		row += buffer->pitch;
 	}
 }
 
@@ -174,6 +174,33 @@ MainWindowProc( HWND window, UINT message, WPARAM wParam, LPARAM lParam ) {
 		case WM_ACTIVATEAPP: {
 			OutputDebugStringA("WM_ACTIVATEAPP\n");
 		} break;
+
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+		case WM_KEYDOWN:
+		case WM_KEYUP: {
+			uint32 virtualKeyCode = wParam;
+			bool wasDown = ( (lParam & (1<<30)) != 0 );
+			bool isDown = ( (lParam & (1<<31)) == 0 );
+
+			if ( wasDown != isDown  ) {
+
+				if ( virtualKeyCode== 'W' ) {
+				} else if ( virtualKeyCode== 'A' ) {
+				} else if ( virtualKeyCode== 'S' ) {
+				} else if ( virtualKeyCode== 'D' ) {
+				} else if ( virtualKeyCode== 'Q' ) {
+				} else if ( virtualKeyCode== 'E' ) {
+				} else if ( virtualKeyCode== VK_UP ) {
+				} else if ( virtualKeyCode== VK_LEFT ) {
+				} else if ( virtualKeyCode== VK_DOWN ) {
+				} else if ( virtualKeyCode== VK_RIGHT ) {
+				} else if ( virtualKeyCode== VK_ESCAPE ) {
+				} else if ( virtualKeyCode== VK_SPACE ) {
+				}
+			}
+			
+			}break;
 		case WM_PAINT:
 		{
 			PAINTSTRUCT paint;
@@ -199,7 +226,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 	loadXInput();
 
-	WNDCLASS windowClass = {};
+	WNDCLASSA windowClass = {};
 
 	resizeDIBSection(&globalBackBuffer, 1280, 720);
 
@@ -225,7 +252,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 				hInstance,
 				0);
 		if ( windowHandle ) {
-			
 			running = true;
 
 			int xOffset = 0;
@@ -298,33 +324,28 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 						int16 stickY = pad->sThumbLY;
 
 
-						if ( up ) {
-							yOffset += 4;
-						}
-						if ( down ) {
-							yOffset -= 4;
-						}
-						if ( left ) {
-							xOffset += 8;
-						}
-						if ( right ) {
-							xOffset -= 8;
-						}
+						
+						xOffset -= stickX>>12;
+						yOffset += stickY>>12;
+						
 					// controller not available
 					} else {
 
 					}
 
 				}
+				XINPUT_VIBRATION vibration;
+				vibration.wLeftMotorSpeed = 65535;
+				vibration.wRightMotorSpeed = 65535;
+				XInputSetState(0, &vibration);
 
-				renderWeirdGradient(globalBackBuffer, xOffset, yOffset);
+				renderWeirdGradient(&globalBackBuffer, xOffset, yOffset);
 
 				HDC deviceContext = GetDC(windowHandle);
 				win32_window_dimensions windowDimensions = getWindowDimensions(windowHandle);
 
 				displayBufferInWindow(&globalBackBuffer, deviceContext, windowDimensions.width, windowDimensions.height);
 				ReleaseDC(windowHandle, deviceContext);
-				++xOffset;
 			}
 		}
 	} else {
