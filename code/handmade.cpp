@@ -328,16 +328,20 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 						xOffset -= stickX>>12;
 						yOffset += stickY>>12;
 						
+						if ( aButton ) {
+							XINPUT_VIBRATION vibration;
+							vibration.wLeftMotorSpeed = 65534;
+							vibration.wRightMotorSpeed = 65534;
+							XInputSetState(0, &vibration);
+						}
+
 					// controller not available
 					} else {
 
 					}
 
 				}
-				XINPUT_VIBRATION vibration;
-				vibration.wLeftMotorSpeed = 65535;
-				vibration.wRightMotorSpeed = 65535;
-				XInputSetState(0, &vibration);
+				
 
 				renderWeirdGradient(&globalBackBuffer, xOffset, yOffset);
 
