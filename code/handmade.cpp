@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <xinput.h>
+#include <dsound.h>
 
 #define internal static
 #define local_persist static 
@@ -41,7 +42,7 @@ global_variable win32_offscreen_buffer globalBackBuffer;
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE* pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(XInputGetStateStub) {
-	return(0);
+	return ERROR_DEVICE_NOT_CONNECTED;
 }
 global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub;
 
@@ -49,7 +50,7 @@ global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub;
 #define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION* pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(XInputSetStateStub) {
-	return(0);
+	return ERROR_DEVICE_NOT_CONNECTED;
 }
 global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 
@@ -62,6 +63,9 @@ typedef DWORD WINAPI x_input_set_state(DWORD dwUserIndex, XINPUT_VIBRATION* pVib
 
 internal void loadXInput(void) {
 	HMODULE XInputLibrary = LoadLibraryA("xinput1_3.dll");
+	if ( !XInputLibrary ) {
+		XInputLibrary = LoadLibraryA("xinput1_4.dll");
+	}
 	if ( XInputLibrary ) {
 		XInputGetState = (x_input_get_state*)GetProcAddress(XInputLibrary, "XInputGetState");
 		XInputSetState = (x_input_set_state*)GetProcAddress(XInputLibrary, "XInputSetState");
@@ -78,6 +82,10 @@ win32_window_dimensions getWindowDimensions(HWND window) {
 	return dimensions;
 
 }
+
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter )
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
 
 internal void renderWeirdGradient(win32_offscreen_buffer *buffer, int xOffset, int  yOffset)  {
 
@@ -132,7 +140,7 @@ resizeDIBSection(win32_offscreen_buffer *buffer, int width, int height) {
 	buffer->info.bmiHeader.biCompression = BI_RGB;
 
 	int bitmapMemorySize = (buffer->width*buffer->height)*buffer->bytesPerPixel;
-	buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+	buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 
 	buffer->pitch = width*buffer->bytesPerPixel;
 
@@ -198,6 +206,11 @@ MainWindowProc( HWND window, UINT message, WPARAM wParam, LPARAM lParam ) {
 				} else if ( virtualKeyCode== VK_ESCAPE ) {
 				} else if ( virtualKeyCode== VK_SPACE ) {
 				}
+
+				bool altKeyWasDown = (lParam & (1<<29)) != 0;
+				if ( virtualKeyCode== VK_F4 && altKeyWasDown ) {
+					running = false;
+				}	
 			}
 			
 			}break;
@@ -213,12 +226,83 @@ MainWindowProc( HWND window, UINT message, WPARAM wParam, LPARAM lParam ) {
 		}	break;
 
 		default: {
-			OutputDebugStringA("default\n");
 			result = DefWindowProc(window, message, wParam, lParam);
 			}break;
 	}
 
 	return result;
+}
+
+internal void initDirectSound(HWND windowHandle, int32 samplePerSecond, int32 bufferSize) {
+	// Load the library
+	HMODULE directSoundLibrary = LoadLibraryA("dsound.dll");
+	if ( ! directSoundLibrary ) {
+		OutputDebugStringA("Direct sound dll not found ");
+		return;
+	}
+
+	// Get a direct sound object
+	direct_sound_create *directSoundCreate = (direct_sound_create*)GetProcAddress(directSoundLibrary, "DirectSoundCreate");
+
+	HRESULT error;
+
+	LPDIRECTSOUND directSound;
+	error = directSoundCreate(0, &directSound, 0);
+	if ( directSoundCreate && SUCCEEDED(error) ) {
+
+		DSBUFFERDESC bufferDescription = {};
+		bufferDescription.dwSize = sizeof(bufferDescription);
+		bufferDescription.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+		WAVEFORMATEX waveFormat = {};
+		waveFormat.wFormatTag = WAVE_FORMAT_PCM;
+		waveFormat.nChannels = 2;
+		waveFormat.nSamplesPerSec = samplePerSecond;
+		waveFormat.wBitsPerSample = 16;
+		waveFormat.nBlockAlign = (waveFormat.nChannels*waveFormat.wBitsPerSample) / 8;
+		waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign; 
+		waveFormat.cbSize = 0;
+
+		
+
+		LPDIRECTSOUNDBUFFER primaryBuffer;
+		// create a primary buffer
+		
+		if ( SUCCEEDED(directSound->SetCooperativeLevel(windowHandle, DSSCL_PRIORITY)) ) {
+
+			if ( SUCCEEDED(error = directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0)) ) {
+				
+				if ( !(SUCCEEDED(error = primaryBuffer->SetFormat(&waveFormat))) ) {
+					OutputDebugStringA("Primary buffer failed " + error );
+				}
+
+			} else {
+				OutputDebugStringA("Primary buffer failed " + error);
+			}
+
+			DSBUFFERDESC bufferDescription = {};
+			bufferDescription.dwSize = sizeof(bufferDescription);
+			bufferDescription.dwFlags = 0;
+			bufferDescription.dwBufferBytes = bufferSize;
+			bufferDescription.lpwfxFormat = &waveFormat;
+
+			LPDIRECTSOUNDBUFFER secondaryBuffer;
+			// create a secondary buffer
+			if ( SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &secondaryBuffer, 0)) ) {
+
+			}
+		}
+
+		
+
+		// start playing it
+	}
+	else {
+		OutputDebugStringA("Create DSound error " + error);
+	}
+
+	
+
 }
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
@@ -257,6 +341,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 			int xOffset = 0;
 			int yOffset = 0;
 
+			initDirectSound(windowHandle, 48000,48000*sizeof(int16)*2);
+
 			while ( running ) {
 
 				MSG message;
@@ -270,7 +356,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 					DispatchMessage(&message);
 				}
 
-				// should we poll this more frequently?
+				// TODO: should we poll this more frequently?
 				for ( DWORD controllerIdx = 0; controllerIdx < XUSER_MAX_COUNT; ++controllerIdx ) {
 					XINPUT_STATE controllerState;
 					
@@ -328,7 +414,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 						xOffset -= stickX>>12;
 						yOffset += stickY>>12;
 						
-						if ( aButton ) {
+						if ( xButton ) {
 							XINPUT_VIBRATION vibration;
 							vibration.wLeftMotorSpeed = 65534;
 							vibration.wRightMotorSpeed = 65534;
