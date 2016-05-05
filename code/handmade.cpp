@@ -1,4 +1,4 @@
-// day 007 - direct sound
+// day 008 - direct sound write a square wave
 #include <windows.h>
 #include <stdint.h>
 #include <math.h>
@@ -37,6 +37,7 @@ struct win32_window_dimensions {
 };
 
 global_variable win32_offscreen_buffer globalBackBuffer;
+global_variable LPDIRECTSOUNDBUFFER globalSecondaryBuffer;
 
 // XInputGetState wrapper to prevent null pointer
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE* pState)
@@ -286,9 +287,9 @@ internal void initDirectSound(HWND windowHandle, int32 samplePerSecond, int32 bu
 			bufferDescription.dwBufferBytes = bufferSize;
 			bufferDescription.lpwfxFormat = &waveFormat;
 
-			LPDIRECTSOUNDBUFFER secondaryBuffer;
+			
 			// create a secondary buffer
-			if ( SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &secondaryBuffer, 0)) ) {
+			if ( SUCCEEDED(directSound->CreateSoundBuffer(&bufferDescription, &globalSecondaryBuffer, 0)) ) {
 
 			}
 		}
@@ -338,10 +339,22 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		if ( windowHandle ) {
 			running = true;
 
+			// graphics test
 			int xOffset = 0;
 			int yOffset = 0;
 
-			initDirectSound(windowHandle, 48000,48000*sizeof(int16)*2);
+
+			// sound test
+			int samplesPerSecond = 48000;
+			uint32 runningSampleIndex = 0;
+			int toneHz = 256;
+			int bytesPerSample = sizeof(int16)*2;
+			int squareWavePeriod = samplesPerSecond/toneHz;
+			int halfSquareWavePeriod = squareWavePeriod / 2;
+			int secondaryBufferSize = samplesPerSecond*bytesPerSample;
+
+			initDirectSound(windowHandle, samplesPerSecond, secondaryBufferSize);
+			globalSecondaryBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
 			while ( running ) {
 
@@ -362,32 +375,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 					
 					// this controller is plugged in
 					if ( XInputGetState(controllerIdx, &controllerState) == ERROR_SUCCESS ) {
-
-						/*
-						_XINPUT_GAMEPAD {
-						  WORD  wButtons;
-						  BYTE  bLeftTrigger;
-						  BYTE  bRightTrigger;
-						  SHORT sThumbLX;
-						  SHORT sThumbLY;
-						  SHORT sThumbRX;
-						  SHORT sThumbRY;
-						} XINPUT_GAMEPAD, *PXINPUT_GAMEPAD;
-
-						XINPUT_GAMEPAD_DPAD_UP	0x0001
-						XINPUT_GAMEPAD_DPAD_DOWN	0x0002
-						XINPUT_GAMEPAD_DPAD_LEFT	0x0004
-						XINPUT_GAMEPAD_DPAD_RIGHT	0x0008
-						XINPUT_GAMEPAD_START	0x0010
-						XINPUT_GAMEPAD_BACK	0x0020
-						XINPUT_GAMEPAD_LEFT_THUMB	0x0040
-						XINPUT_GAMEPAD_RIGHT_THUMB	0x0080
-						XINPUT_GAMEPAD_LEFT_SHOULDER	0x0100
-						XINPUT_GAMEPAD_RIGHT_SHOULDER	0x0200
-						XINPUT_GAMEPAD_A	0x1000
-						XINPUT_GAMEPAD_B	0x2000
-						XINPUT_GAMEPAD_X	0x4000
-						XINPUT_GAMEPAD_Y	0x8000*/
 
 						//  see if controllerstate.dwPacketNumber increments too quickly
 						XINPUT_GAMEPAD *pad = &controllerState.Gamepad;
@@ -430,6 +417,54 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 				
 
 				renderWeirdGradient(&globalBackBuffer, xOffset, yOffset);
+
+				
+
+				DWORD playCursor;
+				DWORD writeCursor;
+
+				if ( SUCCEEDED(globalSecondaryBuffer->GetCurrentPosition(&playCursor, &writeCursor)) ) {
+
+
+
+					// Samples:
+					//  16bit 16bit, etc..
+					// [LEFT  RIGHT] LEFT RIGHT LEFT RIGHT .... 
+					// direct sound output test:
+					VOID *region1;
+					DWORD region1Size;
+					VOID *region2;
+					DWORD region2Size;
+
+					DWORD byteToLock = (runningSampleIndex*bytesPerSample) % secondaryBufferSize;
+					DWORD bytesToWrite;
+					if ( byteToLock > playCursor ) {
+						bytesToWrite = (secondaryBufferSize - byteToLock);
+						bytesToWrite += playCursor;
+					} else {
+						bytesToWrite = playCursor - byteToLock;
+					}
+					if ( SUCCEEDED(globalSecondaryBuffer->Lock(byteToLock,bytesToWrite,
+																&region1, &region1Size,
+																&region2, &region2Size, 0)) ) {
+						int16 *sampleOut = (int16*)region1;
+						DWORD region1SampleCount = region1Size/bytesPerSample;
+						for ( DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex ) {
+							int16 sampleValue = ((runningSampleIndex++ / halfSquareWavePeriod) % 2) ? 16000 : -16000;
+							*sampleOut++ = sampleValue;
+							*sampleOut++ = sampleValue;
+						}
+
+						DWORD region2SampleCount = region2Size/bytesPerSample;
+						sampleOut = (int16*)region2;
+						for ( DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex ) {
+							int16 sampleValue = ((runningSampleIndex++ / halfSquareWavePeriod) % 2) ? 16000 : -16000;
+							*sampleOut++ = sampleValue;
+							*sampleOut++ = sampleValue;
+						}
+					}
+				}
+
 
 				HDC deviceContext = GetDC(windowHandle);
 				win32_window_dimensions windowDimensions = getWindowDimensions(windowHandle);
